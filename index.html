@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amigo secreto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14213d;--card:#1d2f57;--ink:#f7f5ff;--mut:#a9b4d6;--ac:#ffc93c;--ac2:#ff5d8f;--ok:#6ee7a8;--line:#33477a}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.5;display:flex;justify-content:center;padding:32px 18px}
+main{width:100%;max-width:560px}
+h1{font-size:clamp(2.4rem,9vw,3.6rem);line-height:1;margin:0 0 12px;font-weight:800;letter-spacing:-.03em}
+p{color:var(--mut);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:18px}
+label{display:block;font-weight:600;margin-bottom:8px}
+textarea{width:100%;min-height:150px;resize:vertical;background:var(--bg);color:var(--ink);border:1.5px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-size:1.05rem}
+textarea:focus,button:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+button{font:inherit;font-weight:800;font-size:1rem;border:0;border-radius:12px;padding:13px 18px;cursor:pointer;background:var(--ac);color:#14213d;width:100%;margin-top:14px}
+button:disabled{opacity:.6;cursor:wait}
+button.sec{background:transparent;color:var(--ink);border:1.5px solid var(--line);margin-top:0;padding:9px 12px;width:auto;font-size:.9rem}
+.err{color:var(--ac2);font-weight:600;margin-top:12px;min-height:1.2em}
+.fila{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:14px 0;border-top:1px solid var(--line)}
+.fila:first-of-type{border-top:0}
+.fila .nom{font-weight:800;font-size:1.1rem;flex:1 1 140px}
+.est{font-size:.85rem;font-weight:600;padding:3px 10px;border-radius:99px;border:1.5px solid var(--line);color:var(--mut)}
+.est.rev{color:var(--ok);border-color:var(--ok)}
+.res{text-align:center;padding:30px 10px}
+.res small{color:var(--mut);font-size:1rem}
+.res strong{display:block;font-size:clamp(2.4rem,11vw,4rem);line-height:1.05;color:var(--ac);margin:10px 0 4px;font-weight:800;word-break:break-word;animation:pop .45s cubic-bezier(.2,1.4,.4,1)}
+.aviso{font-size:.92rem;color:var(--mut);margin:14px 0 0}
+.hide{display:none}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.res strong{animation:none}}
+</style>
+</head>
+<body>
+<main>
+
+<!-- 1. Crear sorteo -->
+<section id="vCrear" class="hide">
+  <h1>Amigo secreto</h1>
+  <p>Escribe los nombres de todos los que juegan. Recibirás un enlace personal para cada uno, y cada enlace solo puede revelarse una vez.</p>
+  <div class="card">
+    <label for="nombres">Participantes (uno por línea)</label>
+    <textarea id="nombres" placeholder="Ana&#10;Luis&#10;María&#10;Carlos"></textarea>
+    <button id="btnCrear">Hacer sorteo</button>
+    <div class="err" id="errCrear" role="alert"></div>
+  </div>
+</section>
+
+<!-- 2. Panel del organizador -->
+<section id="vAdmin" class="hide">
+  <h1>Sorteo listo</h1>
+  <p>Envía a cada persona <b>solo su enlace</b>, por privado. Si un enlace sale como "revelado" y esa persona dice que no lo abrió, alguien lo vio antes.</p>
+  <div class="card" id="lista"></div>
+  <p class="aviso">Guarda la dirección de esta página: es la única forma de volver a ver los enlaces. No muestra a quién le tocó cada quien.</p>
+  <div class="err" id="errAdmin" role="alert"></div>
+</section>
+
+<!-- 3. Jugador -->
+<section id="vJugar" class="hide">
+  <h1 id="saludo">Amigo secreto</h1>
+  <div id="pre" class="card">
+    <p id="pregunta">Cuando pulses el botón verás a quién le regalas. Solo se puede ver una vez, así que asegúrate de que nadie mire tu pantalla.</p>
+    <button id="btnRevelar">Revelar mi amigo secreto</button>
+    <div class="err" id="errJugar" role="alert"></div>
+  </div>
+  <div id="post" class="card res hide">
+    <small>Tu amigo secreto es</small>
+    <strong id="amigo"></strong>
+    <small>Guarda el secreto.</small>
+    <p class="aviso">Puedes volver a ver este nombre desde este mismo navegador.</p>
+  </div>
+</section>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+
+async function api(ruta, opciones){
+  const r = await fetch("/api/" + ruta, opciones);
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw Object.assign(new Error(j.error || "Error inesperado"), {status: r.status});
+  return j;
+}
+const post = (ruta, cuerpo) => api(ruta, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cuerpo)});
+const guardar = (k, v) => { try{ localStorage.setItem(k, v); }catch(e){} };
+const leer = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
+const mostrar = id => ["vCrear","vAdmin","vJugar"].forEach(v => $(v).classList.toggle("hide", v !== id));
+
+/* ---------- Crear ---------- */
+$("btnCrear").onclick = async () => {
+  $("errCrear").textContent = "";
+  const nombres = $("nombres").value.split("\n");
+  $("btnCrear").disabled = true;
+  try{
+    const {admin} = await post("crear", {nombres});
+    guardar("amigo-admin", admin);
+    location.href = "/?a=" + encodeURIComponent(admin);
+  }catch(e){
+    $("errCrear").textContent = e.message;
+    $("btnCrear").disabled = false;
+  }
+};
+
+/* ---------- Panel del organizador ---------- */
+async function cargarAdmin(admin){
+  mostrar("vAdmin");
+  try{
+    const {jugadores} = await api("admin?a=" + encodeURIComponent(admin));
+    const cont = $("lista"); cont.textContent = "";
+    for(const j of jugadores){
+      const url = location.origin + "/?k=" + encodeURIComponent(j.tok);
+      const fila = document.createElement("div"); fila.className = "fila";
+      const nom = document.createElement("span"); nom.className = "nom"; nom.textContent = j.n;
+      const est = document.createElement("span"); est.className = "est" + (j.rev ? " rev" : "");
+      est.textContent = j.rev ? "revelado" : "sin abrir";
+      const copiar = document.createElement("button"); copiar.className = "sec"; copiar.textContent = "Copiar enlace";
+      copiar.onclick = async () => {
+        try{ await navigator.clipboard.writeText(url); copiar.textContent = "¡Copiado!"; }
+        catch(e){ prompt("Copia este enlace:", url); }
+      };
+      const wa = document.createElement("a");
+      wa.href = "https://wa.me/?text=" + encodeURIComponent(`Hola ${j.n}, este es tu enlace personal del amigo secreto. Ábrelo cuando estés solo/a, solo se puede ver una vez: ${url}`);
+      wa.target = "_blank"; wa.rel = "noopener";
+      const bwa = document.createElement("button"); bwa.className = "sec"; bwa.textContent = "WhatsApp";
+      wa.appendChild(bwa);
+      fila.append(nom, est, copiar, wa);
+      if(j.rev){
+        const lib = document.createElement("button"); lib.className = "sec"; lib.textContent = "Volver a abrir";
+        lib.title = "Útil si la persona cerró la página sin ver el nombre";
+        lib.onclick = async () => {
+          if(!confirm(`¿Permitir que ${j.n} vuelva a ver su resultado? Hazlo solo si ${j.n} no alcanzó a verlo.`)) return;
+          try{ await post("liberar", {a: admin, tok: j.tok}); cargarAdmin(admin); }
+          catch(e){ $("errAdmin").textContent = e.message; }
+        };
+        fila.append(lib);
+      }
+      cont.appendChild(fila);
+    }
+  }catch(e){ $("errAdmin").textContent = e.message; }
+}
+
+/* ---------- Jugador ---------- */
+async function cargarJugador(tok){
+  mostrar("vJugar");
+  const guardado = leer("amigo-res:" + tok);
+  if(guardado){
+    const {n, r} = JSON.parse(guardado);
+    $("saludo").textContent = "Hola, " + n;
+    $("amigo").textContent = r;
+    $("pre").classList.add("hide"); $("post").classList.remove("hide");
+    return;
+  }
+  try{
+    const {n} = await api("revelar?k=" + encodeURIComponent(tok));
+    $("saludo").textContent = "Hola, " + n;
+  }catch(e){
+    $("saludo").textContent = "Enlace no válido";
+    $("pregunta").textContent = e.message;
+    $("btnRevelar").classList.add("hide");
+    return;
+  }
+  $("btnRevelar").onclick = async () => {
+    $("errJugar").textContent = ""; $("btnRevelar").disabled = true;
+    try{
+      const d = await post("revelar", {tok});
+      guardar("amigo-res:" + tok, JSON.stringify(d));
+      $("amigo").textContent = d.r;
+      $("pre").classList.add("hide"); $("post").classList.remove("hide");
+    }catch(e){
+      $("errJugar").textContent = e.message;
+      if(e.status !== 409) $("btnRevelar").disabled = false;
+      else $("btnRevelar").classList.add("hide");
+    }
+  };
+}
+
+/* ---------- Ruteo ---------- */
+if(qs.get("k")) cargarJugador(qs.get("k"));
+else if(qs.get("a")) cargarAdmin(qs.get("a"));
+else{
+  const previo = leer("amigo-admin");
+  mostrar("vCrear");
+  if(previo){
+    const p = document.createElement("p");
+    const a = document.createElement("a"); a.href = "/?a=" + encodeURIComponent(previo);
+    a.textContent = "Ver el último sorteo que creaste"; a.style.color = "var(--ac)";
+    p.appendChild(a); $("vCrear").insertBefore(p, $("vCrear").querySelector(".card"));
+  }
+}
+</script>
+</body>
+</html>
